@@ -1,0 +1,7 @@
+fastapi
+faiss-cpu
+numpy
+pickle5
+sentence-transformers
+mangum
+azure-functions
