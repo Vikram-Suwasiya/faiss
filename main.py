@@ -47,7 +47,12 @@ def search(query: dict):
             raise HTTPException(status_code=500, detail=f"Error encoding query: {e}")
 
         # Perform FAISS search
-        distances, indices = index.search(query_vector, k=1)  
+        k = min(1, index.ntotal)  # Ensure k does not exceed the number of stored vectors
+        if k == 0:
+            print(f"No vectors in FAISS index for namespace '{namespace}'")
+            continue
+
+        distances, indices = index.search(query_vector, k)  
 
         match_index = indices[0][0]
         if match_index >= 0:
