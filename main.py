@@ -29,50 +29,32 @@ app = FastAPI()
 
 @app.post("/search/")
 def search(query: dict):
-    """Searches FAISS index using the provided query."""
-    if not query:
-        raise HTTPException(status_code=400, detail="Query dictionary cannot be empty.")
-
-    print("Received search request:", query)
+    print("Received search request:", query)  
+    
     results = []
-
+    
     for namespace, index in faiss_indexes.items():
-        query_text = query.get(namespace, "").strip()
+        query_text = query.get(namespace, "")
         if not query_text:
-            print(f"Skipping namespace '{namespace}' (No query provided)")
+            print(f"Skipping namespace {namespace} (No query provided)")
             continue  
 
-        if not isinstance(index, faiss.Index):
-            print(f"Skipping namespace '{namespace}' (Invalid FAISS index)")
-            continue
+        query_vector = np.array(model.encode(query_text)).reshape(1, -1).astype("float32")
+        distances, indices = index.search(query_vector, k=1)  
 
-        # Check if index has any vectors stored
-        if index.ntotal == 0:
-            print(f"Skipping namespace '{namespace}' (Index is empty)")
-            continue
-
-        # Convert text to vector
-        try:
-            query_vector = np.array(model.encode(query_text), dtype=np.float32).reshape(1, -1)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error encoding query: {e}")
-
-        # Perform FAISS search
-        k = min(1, index.ntotal)  # Ensure k does not exceed available vectors
-        distances, indices = index.search(query_vector, k=k)
-
-        if indices[0][0] >= 0:
-            match_index = indices[0][0]
+        match_index = indices[0][0]
+        if match_index >= 0:
             match_score = float(1 / (1 + distances[0][0]))  
-            match_data = metadata.get(namespace, {}).get(match_index, {})
-
+            match_data = metadata[namespace][match_index]
+            
+            
             result = {
                 "namespace": namespace,
                 "score": round(match_score, 2),
                 "data": match_data
             }
-            print("Match found:", result)
+            print("Match found:", result)  
             results.append(result)
-
-    print("Returning response:", results)
+    
+    print("Returning response:", results)  
     return results
