@@ -14,6 +14,8 @@ if not os.path.exists(faiss_file):
 try:
     with open(faiss_file, "rb") as f:
         faiss_indexes, metadata = pickle.load(f)
+    if not isinstance(faiss_indexes, dict) or not isinstance(metadata, dict):
+        raise RuntimeError("Invalid FAISS index format. Expected dictionary.")
 except Exception as e:
     raise RuntimeError(f"Error loading {faiss_file}: {e}")
 
@@ -40,6 +42,15 @@ def search(query: dict):
             print(f"Skipping namespace '{namespace}' (No query provided)")
             continue  
 
+        if not isinstance(index, faiss.Index):
+            print(f"Skipping namespace '{namespace}' (Invalid FAISS index)")
+            continue
+
+        # Check if index has any vectors stored
+        if index.ntotal == 0:
+            print(f"Skipping namespace '{namespace}' (Index is empty)")
+            continue
+
         # Convert text to vector
         try:
             query_vector = np.array(model.encode(query_text), dtype=np.float32).reshape(1, -1)
@@ -47,17 +58,13 @@ def search(query: dict):
             raise HTTPException(status_code=500, detail=f"Error encoding query: {e}")
 
         # Perform FAISS search
-        k = min(1, index.ntotal)  # Ensure k does not exceed the number of stored vectors
-        if k == 0:
-            print(f"No vectors in FAISS index for namespace '{namespace}'")
-            continue
+        k = min(1, index.ntotal)  # Ensure k does not exceed available vectors
+        distances, indices = index.search(query_vector, k=k)
 
-        distances, indices = index.search(query_vector, k)  
-
-        match_index = indices[0][0]
-        if match_index >= 0:
+        if indices[0][0] >= 0:
+            match_index = indices[0][0]
             match_score = float(1 / (1 + distances[0][0]))  
-            match_data = metadata[namespace][match_index]  
+            match_data = metadata.get(namespace, {}).get(match_index, {})
 
             result = {
                 "namespace": namespace,
