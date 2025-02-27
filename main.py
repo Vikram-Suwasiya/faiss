@@ -5,12 +5,12 @@ import pickle
 from sentence_transformers import SentenceTransformer
 import os
 
-# Ensure file exists (Render may not persist uploads)
+# Ensure the FAISS index file exists
 faiss_file = "faiss_indexes.pkl"
 if not os.path.exists(faiss_file):
     raise RuntimeError(f"File {faiss_file} not found. Ensure it is uploaded to Render.")
 
-# Load FAISS Indexes and Metadata
+# Load FAISS indexes and metadata
 try:
     with open(faiss_file, "rb") as f:
         faiss_indexes, metadata = pickle.load(f)
@@ -51,7 +51,7 @@ def search(query: dict):
         match_index = indices[0][0]
         if match_index >= 0:
             match_score = float(1 / (1 + distances[0][0]))  
-            match_data = metadata.get(namespace, {}).get(match_index, {})
+            match_data = metadata.get(namespace, [])[match_index]
 
             if not match_data:
                 print(f"Warning: Metadata missing for index {match_index} in '{namespace}'")
