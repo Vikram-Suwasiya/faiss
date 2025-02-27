@@ -42,7 +42,12 @@ def search(query: dict):
             continue  
 
         query_vector = np.array(model.encode(query_text)).reshape(1, -1).astype("float32")
-        distances, indices = index.search(query_vector, k=1)
+        
+        # Correct usage of faiss.IndexFlat.search
+        k = 1  # Number of nearest neighbors
+        distances = np.zeros((1, k), dtype=np.float32)
+        indices = np.zeros((1, k), dtype=np.int64)
+        index.search(query_vector, k, distances, indices)
 
         match_index = indices[0][0]
         if match_index >= 0:
@@ -54,8 +59,6 @@ def search(query: dict):
                 continue
 
             result = {
-                "namespace": namespace,
-                "score": round(match_score, 2),
                 "data": match_data
             }
             print("Match found:", result)
