@@ -29,32 +29,63 @@ app = FastAPI()
 
 @app.post("/search/")
 def search(query: dict):
-    print("Received search request:", query)  
-    
+    """Searches FAISS index using the provided query."""
+    if not query:
+        raise HTTPException(status_code=400, detail="Query dictionary cannot be empty.")
+
+    print("Received search request:", query)
     results = []
-    
+
+    print("Available FAISS namespaces:", list(faiss_indexes.keys()))
+
     for namespace, index in faiss_indexes.items():
-        query_text = query.get(namespace, "")
+        query_text = query.get(namespace, "").strip()
+        
         if not query_text:
-            print(f"Skipping namespace {namespace} (No query provided)")
+            print(f"Skipping namespace '{namespace}' (No query provided)")
             continue  
 
-        query_vector = np.array(model.encode(query_text)).reshape(1, -1).astype("float32")
-        distances, indices = index.search(query_vector, k=1)  
+        if not isinstance(index, faiss.Index):
+            print(f"Skipping namespace '{namespace}' (Invalid FAISS index)")
+            continue
 
-        match_index = indices[0][0]
-        if match_index >= 0:
-            match_score = float(1 / (1 + distances[0][0]))  
-            match_data = metadata[namespace][match_index]
-            
-            
+        # Check if index has any vectors stored
+        if index.ntotal == 0:
+            print(f"Skipping namespace '{namespace}' (Index is empty)")
+            continue
+
+        # Convert text to vector
+        try:
+            query_vector = np.array(model.encode(query_text), dtype=np.float32).reshape(1, -1)
+            print(f"Query vector shape for '{namespace}':", query_vector.shape)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error encoding query: {e}")
+
+        # Perform FAISS search
+        k = min(5, index.ntotal)  # Retrieve up to 5 matches
+        distances, indices = index.search(query_vector, k=k)
+
+        print(f"Search results for '{namespace}': indices={indices}, distances={distances}")
+
+        for i in range(len(indices[0])):
+            match_index = indices[0][i]
+            if match_index < 0:
+                continue  # Ignore invalid matches
+
+            match_score = float(1 / (1 + distances[0][i]))  # Convert distance to similarity
+            match_data = metadata.get(namespace, {}).get(match_index, {})
+
+            if not match_data:
+                print(f"Warning: No metadata found for index {match_index} in namespace '{namespace}'")
+                continue
+
             result = {
                 "namespace": namespace,
                 "score": round(match_score, 2),
                 "data": match_data
             }
-            print("Match found:", result)  
+            print("Match found:", result)
             results.append(result)
-    
-    print("Returning response:", results)  
+
+    print("Final response:", results)
     return results
