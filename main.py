@@ -5,7 +5,6 @@ import pickle
 from sentence_transformers import SentenceTransformer
 import os
 
-# Load FAISS indexes and metadata
 faiss_file = "faiss_indexes.pkl"
 
 if not os.path.exists(faiss_file):
@@ -19,7 +18,14 @@ try:
 except Exception as e:
     raise RuntimeError(f"Error loading {faiss_file}: {e}")
 
-# Load the Sentence Transformer model
+print("Loaded FAISS Indexes:")
+for namespace, index in faiss_indexes.items():
+    print(f"Namespace: {namespace}, Total Vectors: {index.ntotal}")
+
+print("Loaded Metadata:")
+for namespace, entries in metadata.items():
+    print(f"Namespace: {namespace}, Total Metadata Entries: {len(entries)}")
+
 try:
     model = SentenceTransformer("all-MiniLM-L6-v2")
 except Exception as e:
@@ -29,40 +35,41 @@ app = FastAPI()
 
 @app.post("/search/")
 def search(query: dict):
-    """Searches FAISS index using the provided query."""
     if not query:
         raise HTTPException(status_code=400, detail="Query dictionary cannot be empty.")
 
     print("Received search request:", query)
-    results = []
+    print("Expected namespace keys:", list(faiss_indexes.keys()))
 
-    print("Available FAISS namespaces:", list(faiss_indexes.keys()))
+    results = []
 
     for namespace, index in faiss_indexes.items():
         query_text = query.get(namespace, "").strip()
-        
+
         if not query_text:
             print(f"Skipping namespace '{namespace}' (No query provided)")
-            continue  
+            continue
 
         if not isinstance(index, faiss.Index):
             print(f"Skipping namespace '{namespace}' (Invalid FAISS index)")
             continue
 
-        # Check if index has any vectors stored
         if index.ntotal == 0:
             print(f"Skipping namespace '{namespace}' (Index is empty)")
             continue
 
-        # Convert text to vector
         try:
-            query_vector = np.array(model.encode(query_text), dtype=np.float32).reshape(1, -1)
+            query_vector = model.encode(query_text)
+
+            if query_vector is None:
+                raise RuntimeError(f"Encoding failed for query: {query_text}")
+
+            query_vector = np.array(query_vector, dtype=np.float32).reshape(1, -1)
             print(f"Query vector shape for '{namespace}':", query_vector.shape)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error encoding query: {e}")
 
-        # Perform FAISS search
-        k = min(5, index.ntotal)  # Retrieve up to 5 matches
+        k = min(5, index.ntotal)
         distances, indices = index.search(query_vector, k=k)
 
         print(f"Search results for '{namespace}': indices={indices}, distances={distances}")
@@ -70,9 +77,9 @@ def search(query: dict):
         for i in range(len(indices[0])):
             match_index = indices[0][i]
             if match_index < 0:
-                continue  # Ignore invalid matches
+                continue
 
-            match_score = float(1 / (1 + distances[0][i]))  # Convert distance to similarity
+            match_score = float(1 / (1 + distances[0][i])) 
             match_data = metadata.get(namespace, {}).get(match_index, {})
 
             if not match_data:
